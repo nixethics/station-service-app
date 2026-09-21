@@ -8,7 +8,8 @@ def afficher():
 
     st.subheader("Statistiques actuelles")
 
-    tables = ["mouvements_journaliers", "ventes_pompe", "achats", "factures"]
+    tables = ["mouvements_journaliers", "ventes_pompe", "achats",
+              "factures", "factures_lignes", "charges"]
     for t in tables:
         try:
             res = conn.table(t).select("id", count="exact").execute()
@@ -22,8 +23,9 @@ def afficher():
 
     st.caption(
         "Cette action supprime **toutes** les lignes des tables : "
-        "mouvements_journaliers, ventes_pompe, achats, factures, factures_lignes. "
-        "Les tables carburants et utilisateurs sont conservées."
+        "mouvements_journaliers, ventes_pompe, achats, factures, "
+        "factures_lignes, charges. Les tables carburants et utilisateurs "
+        "sont conservées."
     )
 
     confirmation = st.text_input(
@@ -35,8 +37,7 @@ def afficher():
                  disabled=(confirmation != "SUPPRIMER")):
         try:
             for t in ["factures_lignes", "factures", "ventes_pompe",
-                      "mouvements_journaliers", "achats"]:
-                # Supabase exige un filtre pour delete : on filtre sur id > 0
+                      "mouvements_journaliers", "achats", "charges"]:
                 conn.table(t).delete().gt("id", 0).execute()
             st.success("✅ Toutes les données de test ont été supprimées.")
             st.balloons()

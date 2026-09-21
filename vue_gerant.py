@@ -332,14 +332,90 @@ def onglet_totaux_mensuels():
 # ============================================================
 # Fonction principale
 # ============================================================
+
+
+def onglet_charges():
+    st.subheader("💰 Charges du mois (lecture seule)")
+
+    mois_options = []
+    today = date.today()
+    for i in range(12):
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        mois_options.append(date(y, m, 1))
+
+    mois = st.selectbox(
+        "Mois",
+        mois_options,
+        format_func=lambda d: d.strftime("%B %Y"),
+        key="mois_charges_gerant",
+    )
+    mois_iso = mois.isoformat()
+
+    result = (conn.table("charges")
+              .select("*")
+              .eq("mois", mois_iso)
+              .order("type")
+              .order("libelle")
+              .execute())
+
+    if not result.data:
+        st.info("Aucune charge pour ce mois.")
+        return
+
+    df = pd.DataFrame(result.data)
+    fixes = df[df["type"] == "fixe"]
+    variables = df[df["type"] == "variable"]
+
+    st.markdown("#### 🔒 Charges fixes")
+    if fixes.empty:
+        st.caption("Aucune")
+    else:
+        st.dataframe(fixes[["libelle", "montant"]],
+                     use_container_width=True, hide_index=True)
+        st.markdown(f"**Sous-total : {fixes['montant'].sum():,.0f} F**")
+
+    st.markdown("#### 🔄 Charges variables")
+    if variables.empty:
+        st.caption("Aucune")
+    else:
+        st.dataframe(variables[["libelle", "montant"]],
+                     use_container_width=True, hide_index=True)
+        st.markdown(f"**Sous-total : {variables['montant'].sum():,.0f} F**")
+
+    total = df["montant"].sum()
+    st.markdown(f"## Total général : {total:,.0f} F")
+
+    # === Comparaison avec recettes ===
+    res_m = (conn.table("mouvements_journaliers")
+             .select("recette")
+             .gte("date", mois_iso)
+             .lte("date", (mois.replace(day=1) + timedelta(days=32)).replace(day=1).isoformat())
+             .execute())
+    recette = sum(r["recette"] for r in res_m.data) if res_m.data else 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Recettes du mois", f"{recette:,.0f} F")
+    col2.metric("Charges", f"{total:,.0f} F")
+    marge = recette - total
+    col3.metric("Marge" if marge >= 0 else "Déficit", f"{marge:,.0f} F")
+
+    # Graphique
+    categories = df.groupby("type")["montant"].sum()
+    st.bar_chart(categories)
+
 def afficher():
     st.header("📊 Tableau de bord (Gérant)")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🕒 Stats Pompistes",
         "📒 Stats Comptable",
         "🔍 Comparatif",
         "📅 Totaux mensuels",
+        "💰 Charges",
     ])
     with tab1:
         onglet_pompiste()
@@ -349,3 +425,5 @@ def afficher():
         onglet_comparatif()
     with tab4:
         onglet_totaux_mensuels()
+    with tab5:
+        onglet_charges()

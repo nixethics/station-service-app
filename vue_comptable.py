@@ -10,9 +10,6 @@ from utils import (
 )
 
 
-# ============================================================
-# Onglet 1 — Saisie du jour
-# ============================================================
 def onglet_saisie_jour():
     st.subheader("Saisie du jour")
 
@@ -99,14 +96,10 @@ def onglet_saisie_jour():
         st.success("Journée enregistrée ✅")
         st.balloons()
 
+ 
 
-# ============================================================
-# Onglet 2 — Totaux mensuels
-# ============================================================
 def onglet_totaux_mensuels():
     st.subheader("📅 Totaux mensuels")
-    st.caption("Comparaison entre les ventes pompistes et les saisies comptables, "
-               "par carburant et pour le mois choisi.")
 
     mois_options = []
     today = date.today()
@@ -195,9 +188,142 @@ def onglet_totaux_mensuels():
         st.dataframe(comparaison, use_container_width=True)
 
 
-# ============================================================
-# Onglet 3 — Réceptions / Commandes
-# ============================================================
+def onglet_charges():
+    st.subheader("💰 Charges du mois")
+    st.caption("Gérez ici les charges fixes (mensuelles) et variables "
+               "(ponctuelles) pour un mois donné.")
+
+    mois_options = []
+    today = date.today()
+    for i in range(12):
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        mois_options.append(date(y, m, 1))
+
+    mois = st.selectbox(
+        "Mois concerné",
+        mois_options,
+        format_func=lambda d: d.strftime("%B %Y"),
+        key="mois_charges",
+    )
+    mois_iso = mois.isoformat()
+
+    # === Ajouter une charge ===
+    st.markdown("### ➕ Ajouter une charge")
+
+    with st.form("form_charge"):
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            type_charge = st.selectbox(
+                "Type", ["fixe", "variable"], key="ch_type"
+            )
+        with col2:
+            libelle = st.text_input("Libellé", key="ch_libelle",
+                                    placeholder="Ex: Électricité, Salaires...")
+        with col3:
+            montant = st.number_input("Montant (F)", min_value=0.0,
+                                      step=1000.0, key="ch_montant")
+
+        notes = st.text_input("Notes (optionnel)", key="ch_notes")
+
+        submit = st.form_submit_button("💾 Enregistrer la charge",
+                                       use_container_width=True)
+
+        if submit:
+            if not libelle or montant <= 0:
+                st.error("Renseignez un libellé et un montant > 0.")
+            else:
+                try:
+                    conn.table("charges").upsert({
+                        "mois": mois_iso,
+                        "type": type_charge,
+                        "libelle": libelle.strip(),
+                        "montant": montant,
+                        "notes": notes or None,
+                    }, on_conflict="mois,type,libelle").execute()
+                    st.success("Charge enregistrée ✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+
+    # === Liste des charges du mois ===
+    st.markdown("### 📋 Charges enregistrées")
+
+    result = (conn.table("charges")
+              .select("*")
+              .eq("mois", mois_iso)
+              .order("type")
+              .order("libelle")
+              .execute())
+
+    if not result.data:
+        st.info("Aucune charge pour ce mois.")
+        return
+
+    df = pd.DataFrame(result.data)
+
+    fixes = df[df["type"] == "fixe"]
+    variables = df[df["type"] == "variable"]
+
+    st.markdown("#### 🔒 Charges fixes")
+    if fixes.empty:
+        st.caption("Aucune charge fixe")
+    else:
+        for _, c in fixes.iterrows():
+            col1, col2, col3 = st.columns([3, 2, 1])
+            with col1:
+                st.write(c["libelle"])
+            with col2:
+                st.write(f"{c['montant']:,.0f} F")
+            with col3:
+                if st.button("🗑️", key=f"del_fixe_{c['id']}"):
+                    conn.table("charges").delete().eq("id", c["id"]).execute()
+                    st.rerun()
+        st.markdown(f"**Sous-total charges fixes : {fixes['montant'].sum():,.0f} F**")
+
+    st.markdown("#### 🔄 Charges variables")
+    if variables.empty:
+        st.caption("Aucune charge variable")
+    else:
+        for _, c in variables.iterrows():
+            col1, col2, col3 = st.columns([3, 2, 1])
+            with col1:
+                st.write(c["libelle"])
+            with col2:
+                st.write(f"{c['montant']:,.0f} F")
+            with col3:
+                if st.button("🗑️", key=f"del_var_{c['id']}"):
+                    conn.table("charges").delete().eq("id", c["id"]).execute()
+                    st.rerun()
+        st.markdown(f"**Sous-total charges variables : {variables['montant'].sum():,.0f} F**")
+
+    total = df["montant"].sum()
+    st.markdown(f"## Total général du mois : {total:,.0f} F")
+
+    # === Comparaison avec la recette du mois ===
+    st.markdown("### 📊 Marge brute (Recettes − Charges)")
+
+    res_m = (conn.table("mouvements_journaliers")
+             .select("recette")
+             .gte("date", mois_iso)
+             .lte("date", (mois.replace(day=1) + timedelta(days=32)).replace(day=1).isoformat())
+             .execute())
+    recette_totale = sum(r["recette"] for r in res_m.data) if res_m.data else 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Recettes du mois", f"{recette_totale:,.0f} F")
+    col2.metric("Charges du mois", f"{total:,.0f} F")
+    marge = recette_totale - total
+    if marge >= 0:
+        col3.metric("Marge", f"{marge:,.0f} F")
+    else:
+        col3.metric("Déficit", f"{marge:,.0f} F")
+
+
+
 def onglet_receptions_commandes():
     st.subheader("📦 Réceptions et Commandes")
 
@@ -274,15 +400,13 @@ def onglet_receptions_commandes():
         st.info("Aucune opération ce mois.")
 
 
-# ============================================================
-# Fonction principale
-# ============================================================
 def afficher():
     st.header("📝 Espace Comptable")
 
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "✍️ Saisie du jour",
         "📅 Totaux mensuels",
+        "💰 Charges",
         "📦 Réceptions / Commandes",
     ])
     with tab1:
@@ -290,4 +414,6 @@ def afficher():
     with tab2:
         onglet_totaux_mensuels()
     with tab3:
-        onglet_receptions_commandes()
+        onglet_charges()
+    with tab4:
+        onglet_receptions_commandes()               

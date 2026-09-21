@@ -4,6 +4,9 @@ from datetime import date, timedelta
 from utils import conn
 
 
+# ============================================================
+# Onglet 1 — Stats Pompistes
+# ============================================================
 def onglet_pompiste():
     st.subheader("🕒 Ventes en temps réel (pompistes)")
 
@@ -93,6 +96,9 @@ def onglet_pompiste():
     )
 
 
+# ============================================================
+# Onglet 2 — Stats Comptable
+# ============================================================
 def onglet_comptable():
     st.subheader("📒 Statistiques Comptable")
 
@@ -170,6 +176,9 @@ def onglet_comptable():
     )
 
 
+# ============================================================
+# Onglet 3 — Comparatif
+# ============================================================
 def onglet_comparatif():
     st.subheader("🔍 Comparatif Pompistes vs Comptable")
 
@@ -235,6 +244,9 @@ def onglet_comparatif():
         st.dataframe(merge, use_container_width=True)
 
 
+# ============================================================
+# Onglet 4 — Totaux mensuels
+# ============================================================
 def onglet_totaux_mensuels():
     st.subheader("📅 Totaux mensuels")
 
@@ -261,7 +273,6 @@ def onglet_totaux_mensuels():
     else:
         fin_mois = date(mois.year, mois.month + 1, 1) - timedelta(days=1)
 
-    # Comparaison Pompiste vs Comptable par carburant
     res_p = (conn.table("ventes_pompe")
              .select("*")
              .gte("horodatage", f"{debut_mois.isoformat()}T00:00:00")
@@ -281,7 +292,6 @@ def onglet_totaux_mensuels():
 
     st.markdown("### Par carburant")
 
-    # Comptable
     if not df_c.empty:
         df_c["carburant"] = df_c["carburant_id"].map(carburants)
         comp_recap = df_c.groupby("carburant").agg(
@@ -290,7 +300,6 @@ def onglet_totaux_mensuels():
         ).reset_index()
         comp_recap["source"] = "Comptable"
 
-        # Pompiste
         if not df_p.empty:
             df_p["carburant"] = df_p["carburant_id"].map(carburants)
             pomp_recap = df_p.groupby("carburant").agg(
@@ -311,7 +320,6 @@ def onglet_totaux_mensuels():
         c1.metric("Total litres", f"{total_litres:,.0f} L")
         c2.metric("Total recettes", f"{total_recette:,.0f} F")
 
-        # Graphique
         pivot = fusion.pivot_table(
             index="carburant", columns="source",
             values="recette", aggfunc="sum"
@@ -321,6 +329,9 @@ def onglet_totaux_mensuels():
         st.info("Aucune donnée pour ce mois.")
 
 
+# ============================================================
+# Fonction principale
+# ============================================================
 def afficher():
     st.header("📊 Tableau de bord (Gérant)")
 

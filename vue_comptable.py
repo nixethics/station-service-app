@@ -108,7 +108,6 @@ def onglet_totaux_mensuels():
     st.caption("Comparaison entre les ventes pompistes et les saisies comptables, "
                "par carburant et pour le mois choisi.")
 
-    # Choix du mois
     mois_options = []
     today = date.today()
     for i in range(12):
@@ -132,7 +131,6 @@ def onglet_totaux_mensuels():
     else:
         fin_mois = date(mois.year, mois.month + 1, 1) - timedelta(days=1)
 
-    # === Source Comptable ===
     res_c = (conn.table("mouvements_journaliers")
              .select("*")
              .gte("date", debut_mois.isoformat())
@@ -140,7 +138,6 @@ def onglet_totaux_mensuels():
              .execute())
     df_c = pd.DataFrame(res_c.data) if res_c.data else pd.DataFrame()
 
-    # === Source Pompiste ===
     res_p = (conn.table("ventes_pompe")
              .select("*")
              .gte("horodatage", f"{debut_mois.isoformat()}T00:00:00")

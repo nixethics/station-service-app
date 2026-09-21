@@ -1,0 +1,5 @@
+streamlit
+st-supabase-connection
+pandas
+fpdf2
+bcrypt

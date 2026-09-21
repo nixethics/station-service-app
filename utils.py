@@ -43,3 +43,18 @@ def sauvegarder_mouvement(data: dict):
     conn.table("mouvements_journaliers").upsert(
         data, on_conflict="date,carburant_id"
     ).execute()
+
+
+def log_audit(utilisateur, table_cible, ligne_id, action, ancienne, nouvelle):
+    """Enregistre une modification dans audit_log"""
+    try:
+        conn.table("audit_log").insert({
+            "utilisateur": utilisateur or "inconnu",
+            "table_cible": table_cible,
+            "ligne_id": ligne_id,
+            "action": action,
+            "ancienne_valeur": ancienne,
+            "nouvelle_valeur": nouvelle,
+        }).execute()
+    except Exception as e:
+        st.warning(f"Impossible d'écrire dans le journal d'audit : {e}")

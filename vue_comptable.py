@@ -6,10 +6,14 @@ from utils import (
     get_prix_actuel,
     get_carburants,
     sauvegarder_mouvement,
+    log_audit,
     conn,
 )
 
 
+# ============================================================
+# Onglet 1 — Saisie du jour
+# ============================================================
 def onglet_saisie_jour():
     st.subheader("Saisie du jour")
 
@@ -96,8 +100,10 @@ def onglet_saisie_jour():
         st.success("Journée enregistrée ✅")
         st.balloons()
 
- 
 
+# ============================================================
+# Onglet 2 — Totaux mensuels
+# ============================================================
 def onglet_totaux_mensuels():
     st.subheader("📅 Totaux mensuels")
 
@@ -188,6 +194,9 @@ def onglet_totaux_mensuels():
         st.dataframe(comparaison, use_container_width=True)
 
 
+# ============================================================
+# Onglet 3 — Charges
+# ============================================================
 def onglet_charges():
     st.subheader("💰 Charges du mois")
     st.caption("Gérez ici les charges fixes (mensuelles) et variables "
@@ -211,7 +220,6 @@ def onglet_charges():
     )
     mois_iso = mois.isoformat()
 
-    # === Ajouter une charge ===
     st.markdown("### ➕ Ajouter une charge")
 
     with st.form("form_charge"):
@@ -249,7 +257,6 @@ def onglet_charges():
                 except Exception as e:
                     st.error(f"Erreur : {e}")
 
-    # === Liste des charges du mois ===
     st.markdown("### 📋 Charges enregistrées")
 
     result = (conn.table("charges")
@@ -303,7 +310,6 @@ def onglet_charges():
     total = df["montant"].sum()
     st.markdown(f"## Total général du mois : {total:,.0f} F")
 
-    # === Comparaison avec la recette du mois ===
     st.markdown("### 📊 Marge brute (Recettes − Charges)")
 
     res_m = (conn.table("mouvements_journaliers")
@@ -323,7 +329,9 @@ def onglet_charges():
         col3.metric("Déficit", f"{marge:,.0f} F")
 
 
-
+# ============================================================
+# Onglet 4 — Réceptions / Commandes
+# ============================================================
 def onglet_receptions_commandes():
     st.subheader("📦 Réceptions et Commandes")
 
@@ -400,14 +408,213 @@ def onglet_receptions_commandes():
         st.info("Aucune opération ce mois.")
 
 
+# ============================================================
+# Onglet 5 — Historique et correction
+# ============================================================
+def onglet_historique():
+    st.subheader("📜 Historique et correction")
+    st.caption("Consultez, filtrez et corrigez les mouvements journaliers. "
+               "Cliquez sur le cadenas pour déverrouiller une ligne et la modifier.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        debut = st.date_input("Du", value=date.today() - timedelta(days=30),
+                              key="hist_debut")
+    with col2:
+        fin = st.date_input("Au", value=date.today(), key="hist_fin")
+
+    res = (conn.table("mouvements_journaliers")
+           .select("*")
+           .gte("date", debut.isoformat())
+           .lte("date", fin.isoformat())
+           .order("date", desc=True)
+           .execute())
+
+    if not res.data:
+        st.info("Aucun mouvement sur cette période.")
+        return
+
+    df = pd.DataFrame(res.data)
+    carburants = {c["id"]: c["nom"] for c in
+                  conn.table("carburants").select("id,nom").execute().data}
+    df["carburant"] = df["carburant_id"].map(carburants)
+
+    if "lignes_deverrouillees" not in st.session_state:
+        st.session_state.lignes_deverrouillees = set()
+
+    st.caption(f"{len(df)} mouvement(s) sur la période")
+
+    for _, m in df.iterrows():
+        ligne_id = m["id"]
+        deverrouillee = ligne_id in st.session_state.lignes_deverrouillees
+
+        col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 0.8])
+
+        with col1:
+            st.write(f"**{m['date']}** — {m['carburant']}")
+        with col2:
+            st.write(f"Ventes : {m['ventes']:.0f} L")
+        with col3:
+            st.write(f"Stock fin : {m['stock_fin']:.0f} L")
+        with col4:
+            st.write(f"Recette : {m['recette']:,.0f} F")
+        with col5:
+            if m.get("notes"):
+                st.caption(f"⚠️ {m['notes']}")
+        with col6:
+            icone = "🔓" if deverrouillee else "🔒"
+            if st.button(icone, key=f"cadenas_{ligne_id}",
+                         help="Déverrouiller pour modifier" if not deverrouillee
+                              else "Verrouiller"):
+                if deverrouillee:
+                    st.session_state.lignes_deverrouillees.discard(ligne_id)
+                else:
+                    st.session_state.lignes_deverrouillees.add(ligne_id)
+                st.rerun()
+
+        if deverrouillee:
+            with st.form(f"form_edit_{ligne_id}"):
+                st.markdown(f"**Modification de la ligne du {m['date']} — {m['carburant']}**")
+
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    new_stock_debut = st.number_input(
+                        "Stock début", value=float(m["stock_debut"]),
+                        step=1.0, key=f"sd_{ligne_id}"
+                    )
+                    new_entrees = st.number_input(
+                        "Entrées", value=float(m["entrees"]),
+                        step=1.0, key=f"en_{ligne_id}"
+                    )
+                with c2:
+                    new_ventes = st.number_input(
+                        "Ventes", value=float(m["ventes"]),
+                        step=1.0, key=f"ve_{ligne_id}"
+                    )
+                    new_prix = st.number_input(
+                        "Prix/L", value=float(m["prix_vente"]),
+                        step=10.0, key=f"pr_{ligne_id}"
+                    )
+                with c3:
+                    new_jauge = st.number_input(
+                        "Jauge réelle (0 si non renseigné)",
+                        value=float(m["jauge_reelle"]) if m.get("jauge_reelle") else 0.0,
+                        step=1.0, key=f"ja_{ligne_id}"
+                    )
+                    new_montant_reel = st.number_input(
+                        "Montant réel reçu (0 si non renseigné)",
+                        value=float(m["montant_reel_recu"]) if m.get("montant_reel_recu") else 0.0,
+                        step=100.0, key=f"mr_{ligne_id}"
+                    )
+
+                new_notes = st.text_input(
+                    "Notes", value=m.get("notes") or "",
+                    key=f"no_{ligne_id}"
+                )
+
+                new_stock_fin = new_stock_debut + new_entrees - new_ventes
+                new_recette = new_ventes * new_prix
+                new_perte = (new_jauge - new_stock_fin) if new_jauge > 0 else None
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Nouveau stock fin", f"{new_stock_fin:,.0f} L")
+                c2.metric("Nouvelle recette", f"{new_recette:,.0f} F")
+                if new_perte is not None:
+                    c3.metric("Nouvelle perte", f"{new_perte:,.0f} L")
+
+                col_save, col_cancel = st.columns(2)
+                with col_save:
+                    save = st.form_submit_button("💾 Enregistrer les modifications",
+                                                 use_container_width=True)
+                with col_cancel:
+                    cancel = st.form_submit_button("❌ Annuler",
+                                                   use_container_width=True)
+
+                if save:
+                    nouvelle = {
+                        "stock_debut": new_stock_debut,
+                        "entrees": new_entrees,
+                        "ventes": new_ventes,
+                        "stock_fin": new_stock_fin,
+                        "prix_vente": new_prix,
+                        "recette": new_recette,
+                        "jauge_reelle": new_jauge if new_jauge > 0 else None,
+                        "perte": new_perte,
+                        "montant_reel_recu": new_montant_reel if new_montant_reel > 0 else None,
+                        "notes": new_notes or None,
+                    }
+                    ancienne = {
+                        "stock_debut": m["stock_debut"],
+                        "entrees": m["entrees"],
+                        "ventes": m["ventes"],
+                        "stock_fin": m["stock_fin"],
+                        "prix_vente": m["prix_vente"],
+                        "recette": m["recette"],
+                        "jauge_reelle": m.get("jauge_reelle"),
+                        "perte": m.get("perte"),
+                        "montant_reel_recu": m.get("montant_reel_recu"),
+                        "notes": m.get("notes"),
+                    }
+                    try:
+                        conn.table("mouvements_journaliers").update(
+                            nouvelle
+                        ).eq("id", ligne_id).execute()
+
+                        u = st.session_state.get("utilisateur", {})
+                        nom_user = u.get("nom", "inconnu") if u else "inconnu"
+                        log_audit(
+                            utilisateur=nom_user,
+                            table_cible="mouvements_journaliers",
+                            ligne_id=ligne_id,
+                            action="modification",
+                            ancienne=ancienne,
+                            nouvelle=nouvelle,
+                        )
+
+                        st.session_state.lignes_deverrouillees.discard(ligne_id)
+                        st.success("Ligne modifiée ✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erreur : {e}")
+
+                if cancel:
+                    st.session_state.lignes_deverrouillees.discard(ligne_id)
+                    st.rerun()
+
+        st.markdown("---")
+
+    st.markdown("### 🔍 Journal des modifications récentes")
+    res_log = (conn.table("audit_log")
+               .select("*")
+               .eq("table_cible", "mouvements_journaliers")
+               .order("date_action", desc=True)
+               .limit(20)
+               .execute())
+
+    if not res_log.data:
+        st.caption("Aucune modification enregistrée.")
+    else:
+        df_log = pd.DataFrame(res_log.data)
+        df_log["date_action"] = pd.to_datetime(df_log["date_action"])
+        st.dataframe(
+            df_log[["date_action", "utilisateur", "ligne_id",
+                    "action", "ancienne_valeur", "nouvelle_valeur"]],
+            use_container_width=True,
+        )
+
+
+# ============================================================
+# Fonction principale
+# ============================================================
 def afficher():
     st.header("📝 Espace Comptable")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "✍️ Saisie du jour",
         "📅 Totaux mensuels",
         "💰 Charges",
         "📦 Réceptions / Commandes",
+        "📜 Historique et correction",
     ])
     with tab1:
         onglet_saisie_jour()
@@ -416,4 +623,6 @@ def afficher():
     with tab3:
         onglet_charges()
     with tab4:
-        onglet_receptions_commandes()               
+        onglet_receptions_commandes()
+    with tab5:
+        onglet_historique()

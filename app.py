@@ -8,21 +8,20 @@ import auth
 utilisateur = auth.ecran_connexion()
 
 if not utilisateur:
-    st.stop()  # Rien d'autre n'est affiché tant qu'on n'est pas connecté
+    st.stop()
 
-# === À partir d'ici, l'utilisateur est connecté ===
+# === Infos utilisateur ===
 role = utilisateur["role"]
 nom = utilisateur["nom"]
 
-# === Barre latérale : profil + navigation ===
 st.sidebar.title("⛽ Station-Service")
 st.sidebar.markdown(f"**{nom}**")
 st.sidebar.caption(f"Rôle : {role}")
 st.sidebar.markdown("---")
 
-# === Définition des vues accessibles selon le rôle ===
+# === Vues accessibles selon le rôle ===
 VUES_AUTORISEES = {
-    "admin":      ["📝 Comptable", "📊 Gérant", "⛽ Pompiste", "📨 Secrétaire"],
+    "admin":      ["📝 Comptable", "📊 Gérant", "⛽ Pompiste", "📨 Secrétaire", "⚙️ Admin"],
     "gerant":     ["📊 Gérant"],
     "comptable":  ["📝 Comptable", "📊 Gérant"],
     "pompiste":   ["⛽ Pompiste", "📨 Secrétaire"],
@@ -46,6 +45,7 @@ import vue_comptable
 import vue_gerant
 import vue_pompiste
 import vue_secretaire
+import vue_admin
 
 if page == "📝 Comptable":
     vue_comptable.afficher()
@@ -55,3 +55,5 @@ elif page == "⛽ Pompiste":
     vue_pompiste.afficher()
 elif page == "📨 Secrétaire":
     vue_secretaire.afficher()
+elif page == "⚙️ Admin":
+    vue_admin.afficher()
